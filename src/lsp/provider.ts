@@ -139,6 +139,7 @@ export const createClientProvider = (params: CreateClientProviderParams) => {
           .getServerInfo(client.client)
           .catch((err) => console.error(err));
         if (serverInfo) {
+          params.context.subscriptions.push(...commands.registerLspCommands(clients));
           const calvaSaysChannel = state.outputChannel();
           calvaSaysChannel.appendLine(`clojure-lsp version used: ${serverInfo['server-version']}`);
           calvaSaysChannel.appendLine(`clj-kondo version used: ${serverInfo['clj-kondo-version']}`);
@@ -319,7 +320,6 @@ export const createClientProvider = (params: CreateClientProviderParams) => {
       );
 
       params.context.subscriptions.push(
-        ...commands.registerLspCommands(clients),
         ...commands.registerEventHandlers(),
 
         ...commands.registerVSCodeCommands({
