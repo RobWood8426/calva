@@ -87,47 +87,7 @@ async function renameAfterRefactor(
   return commandResponse;
 }
 
-const clojureLspCommands: ClojureLspCommand[] = [
-  { command: 'add-import-to-namespace', category: 'clojureLsp.refactor' },
-  { command: 'add-missing-import', category: 'clojureLsp.refactor' },
-  { command: 'add-missing-libspec', category: 'clojureLsp.refactor' },
-  { command: 'add-require-suggestion', category: 'clojureLsp.refactor' },
-  { command: 'change-coll', category: 'clojureLsp.refactor' },
-  { command: 'clean-ns', category: 'clojureLsp.refactor' },
-  { command: 'create-function', category: 'clojureLsp.refactor' },
-  { command: 'create-test', category: 'clojureLsp.refactor' },
-  { command: 'cycle-coll', category: 'clojureLsp.refactor' },
-  { command: 'cycle-keyword-auto-resolve', category: 'clojureLsp.refactor' },
-  { command: 'cycle-privacy', category: 'clojureLsp.refactor' },
-  { command: 'demote-fn', category: 'clojureLsp.refactor' },
-  { command: 'destructure-keys', category: 'clojureLsp.refactor' },
-  { command: 'drag-backward', category: 'clojureLsp.refactor' },
-  { command: 'drag-forward', category: 'clojureLsp.refactor' },
-  { command: 'drag-param-backward', category: 'clojureLsp' },
-  { command: 'drag-param-forward', category: 'clojureLsp' },
-  { command: 'expand-let', category: 'clojureLsp.refactor' },
-  { command: 'get-in-all', category: 'clojureLsp.refactor' },
-  { command: 'get-in-less', category: 'clojureLsp.refactor' },
-  { command: 'get-in-more', category: 'clojureLsp.refactor' },
-  { command: 'get-in-none', category: 'clojureLsp.refactor' },
-  { command: 'inline-symbol', category: 'clojureLsp.refactor' },
-  { command: 'move-coll-entry-down', category: 'clojureLsp.refactor' },
-  { command: 'move-coll-entry-up', category: 'clojureLsp.refactor' },
-  { command: 'move-form', category: 'clojureLsp.refactor' },
-  { command: 'replace-refer-all-with-alias', category: 'clojureLsp.refactor' },
-  { command: 'replace-refer-all-with-refer', category: 'clojureLsp.refactor' },
-  { command: 'resolve-macro-as', category: 'clojureLsp.refactor' },
-  { command: 'restructure-keys', category: 'clojureLsp.refactor' },
-  { command: 'sort-clauses', category: 'clojureLsp.refactor' },
-  { command: 'sort-map', category: 'clojureLsp.refactor' },
-  { command: 'suppress-diagnostic', category: 'clojureLsp.refactor' },
-  { command: 'thread-first', category: 'clojureLsp.refactor' },
-  { command: 'thread-first-all', category: 'clojureLsp.refactor' },
-  { command: 'thread-last', category: 'clojureLsp.refactor' },
-  { command: 'thread-last-all', category: 'clojureLsp.refactor' },
-  { command: 'unwind-all', category: 'clojureLsp.refactor' },
-  { command: 'unwind-thread', category: 'clojureLsp.refactor' },
-
+const customLspCommands: ClojureLspCommand[] = [
   {
     command: 'introduce-let',
     afterCommandFn: renameAfterRefactor,
@@ -159,13 +119,37 @@ const clojureLspCommands: ClojureLspCommand[] = [
   // the *function arguments* as well, and there's no reasonable way to step through renaming them
   // all. For these reasons, performing auto-renaming with promote-fn will require more thought and
   // probably some changes in clojure-lsp, and it will remain disabled for now.
-  {
-    command: 'promote-fn',
-    // afterCommandFn: renameAfterRefactor,
-    // defaultName: 'new-fn',
-    category: 'clojureLsp.refactor',
-  },
+  //{
+  //command: 'promote-fn',
+  // afterCommandFn: renameAfterRefactor,
+  // defaultName: 'new-fn',
+  //category: 'clojureLsp.refactor',
+  //},
 ];
+
+function clojureLspCommands(clients: defs.LspClientStore): ClojureLspCommand[] {
+  const document = vscode.window.activeTextEditor?.document;
+  if (!document) {
+    return;
+  }
+  const client = api.getClientForDocumentUri(clients, document.uri);
+  const availableCommands = (client as any)._capabilities.executeCommandProvider.commands.map(
+    (c) => {
+      return { command: c, category: 'clojureLsp.refactor' };
+    }
+  );
+
+  const merged: ClojureLspCommand[] = [...availableCommands, ...customLspCommands].reduce(
+    (acc, pair) => {
+      const map = new Map(acc.map((item) => [item.command, item]));
+      map.set(pair.command, pair);
+      return Array.from(map.values());
+    },
+    []
+  );
+
+  return merged;
+}
 
 function sendCommandRequest(
   clients: defs.LspClientStore,
@@ -192,7 +176,7 @@ function sendCommandRequest(
     return;
   }
 
-  const cmdSpec = clojureLspCommands.filter((c) => c.command === command)[0];
+  const cmdSpec = clojureLspCommands(clients).filter((c) => c.command === command)[0];
 
   client
     .sendRequest(vscode_lsp.ExecuteCommandRequest.type, {
@@ -321,7 +305,7 @@ export function registerLspCommands(clients: defs.LspClientStore) {
       });
     }),
 
-    ...clojureLspCommands.map((command) => registerUserspaceLspCommand(clients, command)),
+    ...clojureLspCommands(clients).map((command) => registerUserspaceLspCommand(clients, command)),
 
     /**
      * The clojure-lsp server previously used to dynamically register all of these top-level commands. However, that behaviour was
@@ -333,7 +317,7 @@ export function registerLspCommands(clients: defs.LspClientStore) {
      *
      * We therefore manually register them here with added support for selecting the appropriate active lsp client on execution.
      */
-    ...clojureLspCommands.map((command) => registerInternalLspCommand(clients, command)),
+    ...clojureLspCommands(clients).map((command) => registerInternalLspCommand(clients, command)),
     ...[
       vscode.commands.registerCommand('clojure-lsp.command', ([command, args]) =>
         sendCommand(clients, command, args)
